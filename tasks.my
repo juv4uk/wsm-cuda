@@ -1,0 +1,12 @@
+; tasks.my — durable task plan for wsm-cuda ("CUDA execution research
+; for WSM programs").
+
+((tasks . (
+  ("WSM-CUDA-BOOTSTRAP-FIRST-WITNESS" . (
+    (priority . 3.5)
+    (capabilities . (cuda research wsm))
+    (origin . wsm-cuda)
+    (description . "First tasks.my entry for this CUDA-execution research testbed for the wsm project. Small repo (240K), early-stage per size alone -- establish and record the first concrete, executed witness (one WSM operation actually run on CUDA hardware and checked against whatever wsm treats as its own reference) rather than building out general infrastructure ahead of a real need, matching the same non-invention discipline wsm-os states explicitly for itself.")
+    (done . ())
+  ))
+)))
