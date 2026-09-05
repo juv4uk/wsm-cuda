@@ -26,3 +26,7 @@ after result parity on the exact fixture. Initial hardware target: NVIDIA GTX
 Select one already-admitted bulk operation, execute the same fixed input on
 CPU and CUDA, compare outputs with explicit tolerance, and record device,
 runtime, correctness and timing separately.
+
+## Ліцензія
+
+Цей твір поширюється під [ВОЛЬНІСТЮ](LICENSE) — простим словом про свободу творити, пам'ятаючи про волю іншого.
