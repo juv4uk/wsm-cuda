@@ -1,0 +1,87 @@
+name: Local GPU runner witness
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/local-gpu-runner.yml"
+
+jobs:
+  cuda-witness:
+    runs-on: [self-hosted, gpu, gtx-1050-ti]
+    timeout-minutes: 10
+    env:
+      CUDA_HOME: /usr/local/cuda-12.6
+      CUDA_PATH: /usr/local/cuda-12.6
+      LD_LIBRARY_PATH: /usr/lib/wsl/lib:/usr/local/cuda-12.6/lib64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Probe WSL CUDA device
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/dxg
+          /usr/lib/wsl/lib/nvidia-smi \
+            --query-gpu=name,driver_version,memory.total,compute_cap \
+            --format=csv,noheader
+          "$CUDA_PATH/bin/nvcc" --version
+
+      - name: Execute a real CUDA kernel
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/wsm-runner-gpu-probe.cu <<'CUDA'
+          #include <cuda_runtime.h>
+          #include <cstdio>
+          #include <cstdlib>
+
+          __global__ void add_one(int* values, int count) {
+              int i = blockIdx.x * blockDim.x + threadIdx.x;
+              if (i < count) values[i] += 1;
+          }
+
+          static void check(cudaError_t rc, const char* what) {
+              if (rc != cudaSuccess) {
+                  std::fprintf(stderr, "%s: %s\n", what, cudaGetErrorString(rc));
+                  std::exit(1);
+              }
+          }
+
+          int main() {
+              constexpr int n = 4096;
+              int host[n];
+              for (int i = 0; i < n; ++i) host[i] = i;
+
+              int* device = nullptr;
+              check(cudaMalloc(&device, sizeof(host)), "cudaMalloc");
+              check(cudaMemcpy(device, host, sizeof(host), cudaMemcpyHostToDevice), "HtoD");
+
+              add_one<<<(n + 255) / 256, 256>>>(device, n);
+              check(cudaGetLastError(), "kernel launch");
+              check(cudaDeviceSynchronize(), "kernel sync");
+              check(cudaMemcpy(host, device, sizeof(host), cudaMemcpyDeviceToHost), "DtoH");
+              check(cudaFree(device), "cudaFree");
+
+              for (int i = 0; i < n; ++i) {
+                  if (host[i] != i + 1) {
+                      std::fprintf(stderr, "mismatch at %d: %d\n", i, host[i]);
+                      return 2;
+                  }
+              }
+
+              cudaDeviceProp prop{};
+              check(cudaGetDeviceProperties(&prop, 0), "cudaGetDeviceProperties");
+              std::printf(
+                  "CUDA_RUNNER_GREEN device=%s cc=%d.%d elements=%d\n",
+                  prop.name, prop.major, prop.minor, n
+              );
+              return 0;
+          }
+          CUDA
+
+          "$CUDA_PATH/bin/nvcc" -O2 -arch=sm_61 \
+            /tmp/wsm-runner-gpu-probe.cu \
+            -o /tmp/wsm-runner-gpu-probe
+          /tmp/wsm-runner-gpu-probe
