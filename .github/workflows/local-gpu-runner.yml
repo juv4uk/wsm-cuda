@@ -26,7 +26,7 @@ jobs:
           /usr/lib/wsl/lib/nvidia-smi \
             --query-gpu=name,driver_version,memory.total,compute_cap \
             --format=csv,noheader
-          "$CUDA_PATH/bin/nvcc" --version
+          "$CUDA_PATH/bin/nvcc" -ccbin /usr/bin/g++ --version
 
       - name: Execute a real CUDA kernel
         shell: bash
@@ -81,7 +81,7 @@ jobs:
           }
           CUDA
 
-          "$CUDA_PATH/bin/nvcc" -O2 -arch=sm_61 \
+          "$CUDA_PATH/bin/nvcc" -ccbin /usr/bin/g++ -O2 -arch=sm_61 \
             /tmp/wsm-runner-gpu-probe.cu \
             -o /tmp/wsm-runner-gpu-probe
           /tmp/wsm-runner-gpu-probe
