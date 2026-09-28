@@ -2,6 +2,9 @@ name: Local GPU runner witness
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/local-gpu-runner.yml"
   push:
     branches: [main]
     paths:
@@ -18,70 +21,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Probe WSL CUDA device
+      - name: Probe shared WSL CUDA worker
         shell: bash
         run: |
           set -euo pipefail
           test -e /dev/dxg
-          /usr/lib/wsl/lib/nvidia-smi \
-            --query-gpu=name,driver_version,memory.total,compute_cap \
-            --format=csv,noheader
-          "$CUDA_PATH/bin/nvcc" -ccbin /usr/bin/g++ --version
+          /usr/lib/wsl/lib/nvidia-smi             --query-gpu=name,driver_version,memory.total,compute_cap             --format=csv,noheader
+          command -v wsm-gpu
+          wsm-gpu ensure
 
-      - name: Execute a real CUDA kernel
+      - name: Hand a real CUDA task to the persistent worker
         shell: bash
         run: |
           set -euo pipefail
-          cat > /tmp/wsm-runner-gpu-probe.cu <<'CUDA'
-          #include <cuda_runtime.h>
-          #include <cstdio>
-          #include <cstdlib>
+          before="$(wsm-gpu ping)"
+          echo "$before"
 
-          __global__ void add_one(int* values, int count) {
-              int i = blockIdx.x * blockDim.x + threadIdx.x;
-              if (i < count) values[i] += 1;
-          }
+          wsm-gpu submit add-one             --count 4194304             --iterations 64
 
-          static void check(cudaError_t rc, const char* what) {
-              if (rc != cudaSuccess) {
-                  std::fprintf(stderr, "%s: %s\n", what, cudaGetErrorString(rc));
-                  std::exit(1);
-              }
-          }
+          after="$(wsm-gpu ping)"
+          echo "$after"
 
-          int main() {
-              constexpr int n = 4096;
-              int host[n];
-              for (int i = 0; i < n; ++i) host[i] = i;
-
-              int* device = nullptr;
-              check(cudaMalloc(&device, sizeof(host)), "cudaMalloc");
-              check(cudaMemcpy(device, host, sizeof(host), cudaMemcpyHostToDevice), "HtoD");
-
-              add_one<<<(n + 255) / 256, 256>>>(device, n);
-              check(cudaGetLastError(), "kernel launch");
-              check(cudaDeviceSynchronize(), "kernel sync");
-              check(cudaMemcpy(host, device, sizeof(host), cudaMemcpyDeviceToHost), "DtoH");
-              check(cudaFree(device), "cudaFree");
-
-              for (int i = 0; i < n; ++i) {
-                  if (host[i] != i + 1) {
-                      std::fprintf(stderr, "mismatch at %d: %d\n", i, host[i]);
-                      return 2;
-                  }
-              }
-
-              cudaDeviceProp prop{};
-              check(cudaGetDeviceProperties(&prop, 0), "cudaGetDeviceProperties");
-              std::printf(
-                  "CUDA_RUNNER_GREEN device=%s cc=%d.%d elements=%d\n",
-                  prop.name, prop.major, prop.minor, n
-              );
-              return 0;
-          }
-          CUDA
-
-          "$CUDA_PATH/bin/nvcc" -ccbin /usr/bin/g++ -O2 -arch=sm_61 \
-            /tmp/wsm-runner-gpu-probe.cu \
-            -o /tmp/wsm-runner-gpu-probe
-          /tmp/wsm-runner-gpu-probe
+          before_pid="$(sed -n 's/.* pid=\([^ ]*\).*/\1/p' <<<"$before")"
+          after_pid="$(sed -n 's/.* pid=\([^ ]*\).*/\1/p' <<<"$after")"
+          test -n "$before_pid"
+          test "$before_pid" = "$after_pid"
+          echo "WSM_CUDA_SHARED_WORKER_GREEN pid=$after_pid"
