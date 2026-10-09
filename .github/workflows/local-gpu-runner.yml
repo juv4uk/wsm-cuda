@@ -16,7 +16,7 @@ jobs:
     if: vars.GITHUB_HOSTED_GPU_RUNNER != ''
     # Standard GitHub-hosted Ubuntu has no NVIDIA GPU. This hardware test
     # must fail closed until a GitHub-hosted GPU larger runner is provisioned.
-    runs-on: ${{ vars.GITHUB_HOSTED_GPU_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04  # fixed GitHub-hosted image; no variable-driven routing
     timeout-minutes: 10
     env:
       CUDA_HOME: /usr/local/cuda-12.6
