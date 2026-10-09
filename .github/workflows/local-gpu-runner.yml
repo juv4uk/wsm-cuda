@@ -12,13 +12,24 @@ on:
 
 jobs:
   cuda-witness:
-    runs-on: [self-hosted, gpu, gtx-1050-ti]
+    # Hardware UNVERIFIED when skipped. Set GITHUB_HOSTED_GPU_RUNNER only to a genuine GitHub-hosted GPU/FPGA runner.
+    if: vars.GITHUB_HOSTED_GPU_RUNNER != ''
+    # Standard GitHub-hosted Ubuntu has no NVIDIA GPU. This hardware test
+    # must fail closed until a GitHub-hosted GPU larger runner is provisioned.
+    runs-on: ${{ vars.GITHUB_HOSTED_GPU_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 10
     env:
       CUDA_HOME: /usr/local/cuda-12.6
       CUDA_PATH: /usr/local/cuda-12.6
       LD_LIBRARY_PATH: /usr/lib/wsl/lib:/usr/local/cuda-12.6/targets/x86_64-linux/lib
     steps:
+      - name: Require GitHub-hosted GPU (no local machines)
+        shell: bash
+        run: |
+          test "${RUNNER_ENVIRONMENT:-}" = github-hosted || { echo "::error::Self-hosted execution forbidden"; exit 1; }
+          command -v nvidia-smi >/dev/null 2>&1 || { echo "::error::No GPU on standard GitHub-hosted runner; hardware witness cannot run"; exit 1; }
+          nvidia-smi --query-gpu=name --format=csv,noheader
+
       - uses: actions/checkout@v4
 
       - name: Probe shared WSL CUDA worker
